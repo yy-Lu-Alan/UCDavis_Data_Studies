@@ -1,0 +1,196 @@
+---
+title: "STS 101"
+author: "Yaoyun Lu"
+date: "November 30, 2025"
+output:
+  html_document:
+    df_print: paged
+---
+
+<body style="background-color:black; color:white">
+
+In this lab, we are going to continue working with the Wikipedia survey of editors from 2011. Start by loading the `tidyverse` package and reading in the two dataframes we saved at the end of the notebook, `en` and `long`.
+```{r}
+#Load tidyverse
+library(tidyverse)
+
+
+#Read in .rds files
+en <- readRDS("en.rds")
+long <- readRDS("long.rds")
+codes <- readRDS("codes.rds")
+```
+
+## Recoding variables (.5 point)
+We are going to add a few more variables from the `en` dataframe to our `long` dataframe. These are `D3b` (whether currently enrolled in school), `D11` (how much you use computers in a typical day), and `D12` (how comfortable you are using computers). Start by creating a one-way table of each of these variables to see which responses are present in the `en` dataframe. If you want to be fancy, you can use a `for` loop.
+```{r}
+#one way table for D3b/d11/d12
+table(en$D3b)
+table(en$D11)
+table(en$D12)
+```
+Now add a new variable to the `en` dataframe for each of these. Your new variables should have informative names (for example, `inschool`) and should be coded either as logical variables (`D3b` ) or as factors with labels that represent values. Note that `D11` and `D12` will need a label for values of "", which indicate that the person declined to answer. You will need to refer to the codebook. Test your new variables to make sure they have the correct values.
+```{r}
+#Recode
+en <- en |>
+        mutate(inschool = D3b == 1,
+               computer_use = factor(D11, levels = c("A1", "A2", "A3", "A4", "A5", "A6", "A7", "A9", " "), 
+                                     labels = c("10 and more hours", "8-9 hours", "6-7 hours", "4-5 hours", "2-3 hours", "About an hour", "Less than an hour", "Don't use my computer daily", "Declined to answer")),
+               computer_comfort = factor(D12, levels = c("A1", "A2", "A3", "A4", " "), labels = c("I am not very comfortable using a computer.", "I use my computer to read email, browse the Internet and use word processors.", "I can download and set up files and applications on my computer.", "I can program and create my own applications.", "Declined to answer")))
+
+#Test
+table(en$inschool)
+table(en$computer_use)
+table(en$computer_comfort)
+```
+Now save your new variables (together with `id`) in a separate data frame, convert it to long format, and add it to our existing `long` data frame. You can do this in one or more steps. Don't forget to convert your variables to character.
+```{r}
+long <- en |>
+        select(id, inschool, computer_use, computer_comfort) |>
+        mutate_all(as.character) |>
+        pivot_longer(-id, names_to = "variable", values_to = "value") |>
+        rbind(long)
+```
+Use the code below to make sure that you have all the variables you should have in `long` (you don't need to add anything to this chunk).
+```{r}
+table(long$variable)
+```
+## Adding multi-column variables (2 points)
+Question Q1a asks respondents which language versions of Wikipedia they contribute to, with one column per possible answer (`Q1a_1` - `Q1a_99`). We are going to add rows only for the versions actually contributed to by respondents, just as we did with the primary languages question in the notebook. Start by extracting just these variables (along with `id`), converting variables to character, transposing the dataframe from wide to long, and keeping only rows with `value == 1`. Then remove the `value` column. Save it as a dataframe called `Q1a`
+```{r}
+Q1a <- en |>
+        select(id, starts_with("Q1a_")) |>
+        mutate_all(as.character) |>
+        pivot_longer(-id, names_to = "variable", values_to = "value") |>
+        filter(value == "1") |>
+        select(-value)
+
+#Show first six rows
+head(Q1a)
+
+#Make sure you have the correct number of rows (you don't need to add anything here)
+dim(Q1a)
+```
+Now use the codebook to make a crosswalk for `Q1a`. It should have two columns, one with the variable name (Q1a_1, Q1a_2, etc.) and one with the description of the variable. Call these `variable` and `language`, just as we did in the Notebook for D9. Save it as a `.csv` file and read it into R as a data frame called `languages`. Then join it to `Q1a` and print the first six rows.
+```{r}
+languages <- read.csv("languages.csv")
+
+Q1a <- left_join(Q1a, languages)
+head(Q1a)
+```
+We are going to clean this up using the exact same text manipulation strategies we used in the notebook. First, make a column called `abbrev` that includes only the abbreviation (in parenthesis) for the language. Then join the `codes` dataframe. Finally, make the `value` column. This will take the language name from the codebook if it is there, otherwise it will take the country name from `codes` if that is available. If none of these is available, it will just take the value of `abbrev`.
+Then create a variable called `value` that includes the name of the language from the `language` column if it is there. Finally, join the `codes` data frame to get any remaining missing languages.
+```{r}
+codes <- codes |>
+  mutate(
+    code = str_extract(country, "(?<=\\().*(?=\\))"))
+
+Q1a <- Q1a |>
+  mutate(
+    raw = str_extract(language, "(?<=\\[).*(?=\\])"),  
+    abbrev = str_extract(raw, "(?<=\\().*(?=\\))")) |>
+  left_join(codes, by = c("abbrev" = "code")) |>        
+  mutate(value = case_when(!is.na(country) ~ country,  
+      TRUE ~ raw),
+    variable = "language_contributes_to") |>
+  select(id, variable, value)
+
+head(Q1a)
+
+
+```
+Now add the `variable` column, giving it a value of "language_contributes_to" in all rows. Finally, keep only the `id`, `variable`, and `value` columns and add all rows to our `long` dataframe. Then use the `table()` function to check to make sure you have all of the correct variable names in `long`.
+```{r}
+long <- Q1a |>
+          mutate(variable = "language_contributes_to") |>
+          select(id, variable, value) |>
+          rbind(long)
+
+#Check to make sure you have all correct variable names (you do not need to add anything here)
+table(long$variable)
+```
+
+## Interactive graphs (1.5 points)
+Our first graph will be an interactive bar graph showing the other versions of Wikipedia that contributors to the English language version also contribute to. We will do this exactly the same way we made the bar graph in the notebook. Remember that we do not want to include English. Your mouseover text should read "<number> % of contributors to English-language Wikipedia also contribute to Wikipedia in <language>."
+
+The code for this will be quite similar to the code we wrote in the notebook to make the bar graph. You may wish to copy and paste from the notebook, then make the necessary changes (you might be surprised at how few changes you need to make).
+```{r fig.width=10}
+#no include english
+g <- long |>
+  filter(variable == "language_contributes_to", value != "English (en)") |>
+  count(value) |>
+  mutate(pct = n / length(unique(long$id)))
+
+g_plot <- ggplot(g, aes(x = reorder(value,pct), y = pct, text = paste0(round(pct*100,1),"% of contributors to English-language Wikipedia also contribute to Wikipedia in ",value))) +
+  geom_col() +
+  coord_flip() +
+  labs(x = "Language", y = "Percent of contributors", title = "Contributors to English-language Wikipedia also contribute
+       to other versions, with German the most")
+
+plotly::ggplotly(g_plot, tooltip = "text")
+```
+
+Next we are going to make a stacked bar graph, showing the education level of contributors of each age, faceted by whether or not the person is in school. Stack education levels in order, with primary on the bottom and doctorate on top. Create mouseover text that is the same for everyone in a given education category / inschool combination. It should say "<number> % of contributors to English-language Wikipedia have a <level>-level education and are <in school / not in school>." You will need to calculate these percentages separately and then add them on, just as we did in the notebook. The factor labels should be "In school" and "Not in school." 
+```{r fig.width=10}
+wide <- long |>
+  filter(variable %in% c("age", "education", "inschool")) |>
+  pivot_wider(id_cols = id, names_from = variable, values_from = value) |>
+  mutate(age = as.integer(age),
+         education = factor(education, labels = c("Primary", "Secondary", "Tertiary", "Master's", "Doctorate")),
+         inschool = ifelse(inschool == "TRUE", "In school", "Not in school"))
+          
+g <- wide |>
+  count(education, inschool) |>
+  group_by(inschool) |>
+  mutate(pct = n / sum(n) * 100,
+         general = paste0(round(pct, 1), 
+                         "% of contributors to English-language Wikipedia have a ",
+                         tolower(education), 
+                         "-level education"),
+         text = ifelse(inschool == "In school",
+                      paste0(general, " and are in school"),
+                      paste0(general, " and are not in school"))) |>
+  right_join(wide) |>
+  ggplot(aes(x = age, fill = education, text = text)) +
+  facet_grid(inschool~.) +
+  geom_bar(width = 1) +
+  theme_bw() +
+  scale_fill_manual(values = wesanderson::wes_palette("Darjeeling1", n = 5)) +
+  labs(x = "Age of contributor", y = "Number of contributors", fill = "Education Level by school")
+  
+plotly::ggplotly(g, tooltip = "text")
+```
+
+Finally, make an interactive bubble graph with age on the x-axis and daily computer use on the y-axis. Each dot will reprsent a unique intersection of age and computer use, with the size and color of the dot indicating how many people fall into that intersection (for example, there will be one dot representing all 20-year olds who spend 4-5 hours per day using computers, with the size and color indicating how many 20-year-olds spend 4-5 hours per day using computers). The mouseover text should indicate what percentage of contributors spend a given amount of time using computers (so the mouseover text will be the same for all dots at a given level of computer use). The y-axis should be ordered from least computer use (with "Declined" being the lowest) at the bottom to most computer use at the top.
+```{r fig.width=10}
+g <- long |>
+      #Keep only relevant variables
+      filter(variable %in% c("age", "computer_use")) |>
+      #Convert from long to wide
+      pivot_wider(id_cols = id, names_from = variable, values_from = value) |>
+      #Change age to integer and computer_use to factor
+      mutate(age = as.integer(age),
+             computer_use = factor(computer_use, 
+                                  levels = c("Declined to answer", "Don't use my computer daily", "Less than an hour", "About an hour", "2-3 hours", "4-5 hours", "6-7 hours", "8-9 hours", "10 and more hours"))) |>
+      #Group
+      group_by(age, computer_use) |>
+      #Identify number of people in each intersection of age and computer use
+      count() |>
+      ungroup() |>
+      group_by(computer_use) |>
+      #Calculate percentage for mouseover and create a variable for mouseover text
+      mutate(pct = n / sum(n) * 100,
+            text = paste0(round(pct, 1), "% of contributors spend ", tolower(computer_use), " using computers")) |>
+      #Sort from highest to lowest n
+      arrange(desc(n)) |>
+      #Plot!
+      ggplot(aes(x = age, y = computer_use, size = n, color = n, text = text)) +
+      geom_point(alpha = 0.7) +
+      scale_size_continuous(range = c(1, 10)) +
+      labs(x = "Age", y = "Daily Computer Use", 
+           size = "Number of\nPeople", color = "Number of\nPeople") +
+      theme_minimal() 
+      
+plotly::ggplotly(g, tooltip = "text")
+```
+Before you submit your lab, save your work and take a look at the preview to make sure that all of your output is showing up and your interactive graph features are working.

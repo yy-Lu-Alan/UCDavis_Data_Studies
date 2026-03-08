@@ -1,0 +1,160 @@
+---
+title: "STS 101: Lab 4"
+author: "Yaoyun Lu"
+date: "October 26, 2025"
+output: pdf_document
+---
+
+Run once if you haven't done so already. This makes it possible to knit to pdf. If you have already run this code block (including in previous assignments), you can delete it or comment it out.
+```{r}
+#Install the tinytex package
+#install.packages("tinytex")
+#If that doesn't work, uncomment and run this instead:
+#install.packages("devtools")
+#devtools::install_github("rstudio/tinytex")
+
+#Once the tinytex package is installed, run this:
+#tinytex::install_tinytex(force = T)
+```
+
+
+If you did not just begin a new R session, sweep your Global Environment and choose "Restart R and Clear Output" from the "Run" menu above.
+
+Start by loading the `tidyverse` package and reading in the data.
+```{r}
+library(tidyverse)
+
+apts <- read.csv("clean_2000_2018.csv")
+
+glimpse(apts)
+```
+
+## Univariate visualizations (1.5 points)
+
+Make the appropriate univariate visualization for the following variables: date, county, price, beds, baths. Each one should have a title and all layers necessary to make your graphs publication quality.
+```{r}
+#Date (x-axis should show years): histogram
+apts |>
+  ggplot(aes(x = year)) +
+  geom_histogram(binwidth = 1) +
+  theme_bw() +
+  labs(x = "Year", y = "Number of Year" , title = "Year Distribution in clean_2000_2018 dataset")
+  
+
+#County (use appropriate capitalization): Bar graph (horizontal, alphabetical)
+apts |>
+  mutate(county = ifelse(is.na(county), "Unknown",
+                         str_to_title(county))) |>
+  count(county) |>
+  arrange(county) |>
+  mutate(county = fct_rev(factor(county))) |> #idk why its from z-a, so I reverse it...
+  ggplot(aes(x = county, y = n)) + 
+  geom_col(fill = "orange") +
+  coord_flip() +
+  labs(x = "County", y = "Number of Counties", title = "Number of counties in the clean_2000_2018 data set") +
+  theme_bw()
+
+#County (use appropriate capitalization): Bar graph (horizontal, by frequency)
+apts |>
+  mutate(county = ifelse(is.na(county), "Unknown",
+                         str_to_title(county))) |>
+  count(county) |>
+  ggplot(aes(x = reorder(county, n), y = n)) +
+  geom_col(fill = "cyan") +
+  coord_flip() +
+  labs(x = "County", y = "Number of Counties", title = "Number of counties in the clean_2000_2018 data set") +
+  theme_bw()
+
+#Price ($20,000 or lower; x-axis should show dollars): Histogram
+apts |>
+  filter(price <= 20000) |> #we need at most 20000 so filter price at first
+  ggplot(aes(x = price)) +
+  geom_histogram(binwidth = 250) +
+  scale_x_continuous(labels = scales::dollar) +
+  theme_bw() +
+  labs(x = "Price in US dollar", title = "Rent distribution in clean_2000_2018 dataset")
+
+#Beds (numeric values through 8 only): Bar graph (vertical)
+apts |>
+  filter(as.numeric(beds) <= 8) |> #same as NB4, we need use as.numeric to compare beds, and at most 8
+  ggplot(aes(x = beds)) +
+  geom_bar() +
+  theme_bw() +
+  labs(x = "number of beds", title = "beds distribution in clean_2000_2018 dataset")
+
+#Baths (x-axis should show all numeric values): Bar graph (vertical)
+apts |>
+  mutate(baths = as.factor(baths)) |> #change datatype at first
+  filter(!is.na(baths)) |>
+  ggplot(aes(x = baths)) +
+  geom_bar() +
+  theme_bw() +
+  labs(x = "Number of baths", title = "Baths distribution in clean_2000_2018 dataset")
+```
+
+## Rent over time
+
+### Create data frame for graphing (.5 points)
+
+Now we are going to focus only on one-bedroom apartments in San Francisco County with rent under $7500/month, and we will consider how the price of rent changed between 2001 and 2017 (we are excluding 2000 and 2018 because we only have part of the year). First, create a data frame called `sf` that includes only the rows we will be considering.
+```{r}
+sf <- apts |>
+        filter(county == "san francisco" & 
+               beds == 1 &
+               price < 7500 &
+               year %in% 2001:2017)
+```
+
+### Save base plot (.5 points)
+
+Now make a base plot (with no geometry), in which year is the independent variable and price is the dependent variable. Include all layers you will need for a publication-quality graph (except the geometry). Use a subtitle to indicate the source of the data, as we did in the notebook (but the subtitle should be different from the subtitle in the notebook). Save it as an object called `sf_plot`.
+```{r}
+sf_plot <- sf |> ggplot(aes(factor(year), price)) +
+            scale_y_continuous(labels = scales::dollar) +
+            scale_x_discrete(breaks = seq(2001, 2017, 2)) +
+            theme_bw() +
+            labs(x = NULL, y = "Rent",
+                 subtitle = "Craigslist rental postings for one-bed apartments in SF County, 2001-2017. Data: K. Pennington")
+```
+
+### Violin/boxplot (.5 points)
+
+Create a series of boxplots inside of violin plots to show the change in rental prices across this time span. Add a title that points out what seems to you the most interesting thing you learned from this plot.
+```{r}
+sf_plot +
+  geom_violin(width = 1.2) +
+  geom_boxplot(width = 0.4) +
+  labs(title = "Rents in SF county increased dramatically from 2010 to 2015")
+  
+```
+
+### ggdist graph (1 point)
+
+Now make a graph that uses these data, but looks like the final graph we made in the notebook. It should have years on the vertical axis, from 2001 at the top to 2017 at the bottom, and price on the horizontal axis. For each year, it should show the distribution of prices, the median, and the central 50%, 80%, and 95%, just as we did in the notebook. You. may use the same legend that we made for the notebook.
+```{r}
+#Read in legend
+p_legend <- readRDS("p_legend.rds")
+sf_plot + 
+  ggdist::stat_slab() +
+  ggdist::stat_interval(size = 1, show.legend = F) +
+  stat_summary(fun = mean) +
+  coord_flip() +
+  scale_x_discrete(limits = rev) +
+  labs(title = "Rents in SF county increased dramatically from 2010 to 2015") +
+  patchwork::inset_element(p_legend, l = .5, r = 1.7, t = 1, b = .3)
+  
+```
+Optional: If you would like your graph to look less squished, paste your code for creating the graph between the two lines of code below to write your graph to a .png file.
+```{r}
+png("year-rent.png", height = 11, width = 8.5, units = "in", res = 300)
+sf_plot + 
+  ggdist::stat_slab() +
+  ggdist::stat_interval(size = 1, show.legend = F) +
+  stat_summary(fun = mean) +
+  coord_flip() +
+  scale_x_discrete(limits = rev) +
+  labs(title = "Rents in SF county increased dramatically from 2010 to 2015") +
+  patchwork::inset_element(p_legend, l = .5, r = 1.7, t = 1, b = .3)
+dev.off()
+```
+

@@ -1,0 +1,152 @@
+---
+title: "STS 101 Lab 2"
+author: "Yaoyun Lu"
+date: "October 10, 2025"
+output: html_notebook
+---
+<body style="background-color:black; color:white">
+
+Begin by sweeping your environment and restarting R.
+
+## Getting started
+
+Load the `tidyverse` package, read in the `kids-subset.csv` and `parents-subset.csv` data frames as we did in `Notebook 2`, then join them into a data frame called `joined`. In this data frame, you want all children and the parents that link to them.
+```{r}
+library(tidyverse)
+
+kids <- read.csv("kids-subset.csv") |>
+        select(-X)
+parents <- read.csv("parents-subset.csv") |>
+        select(-X)
+
+joined <- inner_join(kids, parents, by = "PARID")
+```
+
+## Parents' ages at marriage (2 points)
+
+Using the `year_span()` function we made in `Notebook 1`, create a variable called `MOM_AOM` that calculates the mother's age at marriage (in years) and a variable called `DAD_AOM` that calculates the father's age at marriage (in years). *Make these new variables in the `parents` data frame.* Use the `summary()` function to examine these new variables.
+```{r}
+#Read in year_span() function
+source("year_span.r")
+
+#Create new variables
+parents <- joined |> 
+              mutate(MOM_AOM = year_span(MOM_DOB,DOM),
+                     DAD_AOM = year_span(DAD_DOB, DOM))
+
+#Examine new variables
+summary(parents$MOM_AOM, rm.na = F)
+summary(parents$DAD_AOM, rm.na = F)
+```
+What is the likeliest cause of the implausible values you see here?
+
+Ans: These implausible values might because typo(they wrote wrong, for example, they wrote 1660, but in reality it's 1616) or they wrote in wrong place when they are recording the data.
+> 
+
+
+Graph the distribution of the parents' ages at marriage side by side. Include only ages from 0 to 100. Do this first as a histogram and then as a density plot. You may use either facets or `ggarrange()`. Remember to include appropriate labels and use a theme other than the default.
+```{r}
+#Histogram 
+parents |> 
+  select(KIDID, MOM_AOM, DAD_AOM) |>
+  pivot_longer(!KIDID, names_to = "parent", values_to = "age") |>
+  filter(!is.na(age)) |>
+  mutate(parent = str_sub(parent, 1, 3)) |>
+  ggplot(aes(age)) +
+  geom_histogram(binwidth = 1) +
+  theme_bw() +
+  scale_x_continuous(lim = c(0, 100), breaks = seq(0, 100, 10)) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(x = "Age", y = "Number of people who married",
+       title = "Age of marriage recorded in Henry data") +
+  facet_wrap(~parent, ncol = 2) #combine together
+
+#Density plot
+parents |> 
+  select(KIDID, MOM_AOM, DAD_AOM) |>
+  pivot_longer(!KIDID, names_to = "parent", values_to = "age") |>
+  filter(!is.na(age)) |>
+  mutate(parent = str_sub(parent, 1, 3)) |>
+  ggplot(aes(age)) +
+  geom_density() +
+  theme_bw() +
+  scale_x_continuous(lim = c(0, 100), breaks = seq(0, 100, 10)) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(x = "Age", y = "percent of people who married",
+       title = "Age of marriage recorded in Henry data") +
+  facet_wrap(~parent, ncol = 2)
+```
+
+
+
+Again using the `year_span()` function, create a variable in the `parents` data frame called `AGE_DIFF` that represents the span in years from the father's date of birth to the mother's date of birth (the age difference between the parents). Use the `summary()` function to examine this variable.
+
+```{r}
+#Create new variable
+parents <- joined |> 
+              mutate(AGE_DIFF = year_span(DAD_DOB, MOM_DOB)) # MOM'age-DAD'age
+#Examine new variable
+summary(parents$AGE_DIFF, rm.na = F)
+```
+
+A positive number indicates that which spouse is older?
+
+Ans: A positive number indicates that dad is older than mom in this family.
+> 
+
+Create a histogram showing the age difference between each couple. Use a `binwidth` of 1 and include only couples with an age difference of no more than 25 years in either direction. Include a title and axis labels, and change the theme to something other than the default. A viewer should be able to tell from your title and/or axis labels what a positive number indicates.
+```{r}
+parents |> 
+  ggplot(aes(AGE_DIFF)) +
+  geom_histogram(binwidth = 1) +
+  theme_bw() +
+  scale_x_continuous(lim = c(-25,25), breaks = seq(-25, 25, 5)) +
+  labs(x = "Age Difference(Positive means DAD is older than MOM in this couple)", y = "Number of couples",
+       title = "Age difference of couples in Henry data set")
+```
+
+## Time from marriage to first birth (2 points)
+
+In the notebook, we considered the age of mothers at the birth of their *last* child. Now we want to know how soon after marriage a couple's *first* child was born.  Create a data frame called `oldest` that includes only the rows for each couple's oldest child from the `joined` data frame. Remember that in the notebook, we used the `max()` function to find the child born most recently. Now we need to use the `min()` function to find the child born longest ago. Once we find it, we can use the `interval()` function and the `months()` function to create a variable called `MONTHS` that indicates how many months after marriage the child was born. Use the `summary()` function to examine the new variable.
+```{r}
+#Create the new dataset and variable; remember to keep date of marriage by including it in group_by()
+oldest <- joined |>
+            group_by(PARID, DOM) |> #we want keep parid and dom
+            summarize(DOB = min(as_date(DOB))) |>
+            mutate(MONTHS = interval(DOM, DOB) / months(1))
+
+#Examine the new variable
+summary(oldest$MONTHS)
+          
+```
+Create a histogram (with binwidth representing one month) and density plot showing the number of months between marriage and first birth for each couple, including only values between 0 and 48 (the first four years of marriage).
+```{r}
+#Histogram 
+#BINWIDTH 1, gap 4 yrs
+oldest |>
+  ggplot(aes(MONTHS)) +
+  geom_histogram(binwidth = 1) +
+  theme_bw() +
+  scale_x_continuous(lim = c(0, 48), breaks = seq(0, 48, 2)) +
+  labs(x = "Months of mothers at first birth from marriage", y = "Number of mothers",
+       title = "Months of mothers at first birth in Henry data set")
+  
+
+
+#Density plot
+oldest |>
+  ggplot(aes(MONTHS)) +
+  geom_density() +
+  theme_bw() +
+  scale_x_continuous(lim = c(0, 48), breaks = seq(0, 48, 2)) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(x = "Months of mothers at first birth from marriage", y = "Percent of mothers",
+       title = "Months of mothers at first birth in Henry data set")
+
+```
+
+
+
+
+
+

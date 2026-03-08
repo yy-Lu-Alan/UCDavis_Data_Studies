@@ -1,0 +1,56 @@
+---
+title: "STS 101: Lab 7"
+author: "Yaoyun Lu"
+date: "November 19, 2025"
+output: html_document
+---
+
+<body style="background-color:black; color:white">
+
+In this lab, you will re-make the map of annualized arrest/booking cost relative to neighborhood median income (the last map from Lab 6) as an interactive map, with all of the same features you used in Notebook 6.
+
+Load the `tidyverse` and `leaflet` packages.
+```{r}
+library(tidyverse)
+library(leaflet)
+```
+
+Read in the `arrests_nhoods.rds` file you saved at the end of Lab 6. Then limit the data frames to rows where `ann_cost` is not missing and `income` is not missing. Also read in the `la_county.json.js` file.
+```{r}
+arrests_nhoods <- readRDS("data_map")
+
+la_map <- sf::read_sf("la_county.json.js")
+```
+
+Create your palette.
+```{r}
+palette <- colorFactor(viridis::viridis_pal(option = "D", direction = -1)(5),
+                       domain = arrests_nhoods$cost_income)
+```
+
+Create your data labels for mouseover.
+```{r}
+nhood_text <- str_c("The ", arrests_nhoods$Home_Hood,
+                    "'s annual cost was $", format(arrests_nhoods$ann_cost, big.mark = ","), ".<br>Between 2012 and 2019, ",
+                    arrests_nhoods$Home_Hood, "'s median household income was $", 
+                    format(arrests_nhoods$income, big.mark = ",")) |>
+              lapply(htmltools::HTML)
+```
+
+Now make your map!
+```{r}
+map <- leaflet() |>
+        addTiles()  |>
+        setView(lat = 34.1, lng = -118.3, zoom = 9.25) |>
+        addLegend(pal = palette, values = arrests_nhoods$cost_income, opacity = .75,
+                  title = "annualized arrest/booking cost relative to neighborhood median income, 2012-2019",
+                  position = "bottomleft") |>
+        addPolygons(data = right_join(la_map, arrests_nhoods, by = c("name" = "Home_Hood")),
+                    fillColor = ~palette(cost_income),
+                    smoothFactor = 0.5,
+                    fillOpacity = 0.75,
+                    stroke = F,
+                    label = nhood_text)
+map
+```
+

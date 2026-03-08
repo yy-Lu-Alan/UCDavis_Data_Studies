@@ -1,0 +1,302 @@
+---
+title: "STA 141A: Midquarter report"
+author: "Yaoyun Lu 923467335"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+The midquarte report helps you start working on the wildfire dataset. The five tasks outline some basic exploratory data analysis to investigate the spatial and temporal patterns in the wildfire dataset. You need to write up your own report. 
+
+## Data
+
+The full dataset ([link](https://www.kaggle.com/datasets/rtatman/188-million-us-wildfires/data)) contains 1.88 million entries of wildfires. The dataset of is of 795 MB in size. You can find a smaller subset that contains 100,000 entries on Canvas. You can work on the small subset or the full dataset as you see fit. You can load the 100k data using the following code. Detailed description of variables in the dataset is available on Kaggle. 
+
+```{r}
+wildfires <- read.csv(file = "wildfires_sample_100k.csv")
+```
+
+
+---
+
+###  Task 1 Understanding the Dataset
+
+**(a)** Print the number of rows and columns, and list names and data types.
+
+```{r}
+library(tidyverse)
+glimpse(wildfires)
+```
+
+**(b)** Identify variables with missing values and any other issues.
+
+```{r}
+na_counts = colSums(is.na(wildfires)) |> sort(decreasing = T)
+na_df <- na_counts %>%
+  tibble(col_name = names(na_counts), count = .) %>%
+  mutate(percentage = count / nrow(wildfires)) %>%
+  filter(count > 0)
+na_df$percentage = scales::percent(na_df$percentage)
+na_df
+```
+
+**(c)** Write 4–6 sentences describing your initial impressions and data-quality concerns.
+
+This dataset contains 100,000 wildfire records with 39 variables, such as time, location, size, etc. Some variables contain a high percentage of missing values, for example, COMPLEX_NAME(Name of the complex under which the fire was ultimately managed, when discernible), MTBS_ID(Incident identifier, from the MTBS perimeter dataset). These missing values suggest that we need to clean our data before doing the analysis. The spatial fields(LATITUDE, LONGITUDE) and key temporal field(FIRE_YEAR) are largely usable for exploratory plots. 
+
+---
+
+### Task 2 Exploring Temporal Patterns
+
+Use `FIRE_YEAR` and `DISCOVERY_DOY`.
+**(a)** Create a new column `FIRE_DATE` from `FIRE_YEAR` and `DISCOVERY_DOY`. (Note: Please ignore the column `DISCOVERY_DATE`.)
+
+```{r}
+wildfires <- wildfires %>%
+  mutate(FIRE_DATE = as.Date(paste(FIRE_YEAR, DISCOVERY_DOY, sep = "-"), format = "%Y-%j")) #convert day to mon.
+range(wildfires$FIRE_DATE, na.rm = T)
+wildfires %>% select(FIRE_DATE, FIRE_YEAR, DISCOVERY_DOY) %>% head()
+```
+```{r}
+#Convert DISCOVERY_DATE to date
+# First is range, Second is table for DATE/FIRE_DATE,DIS_DATE, Third is different integer. 
+julian_origin <- lubridate::ymd("0000-11-25") - lubridate::years(4713) #Nov 25, 4713 BCE
+wildfires <- wildfires %>%
+  mutate(DATE = as.Date(DISCOVERY_DATE, origin = julian_origin))
+range(wildfires$DATE, na.rm = T)
+wildfires %>% select(DATE, FIRE_DATE, DISCOVERY_DATE) %>% head()
+wildfires %>%
+  select(DATE, FIRE_DATE) %>%
+  filter(as.integer(DATE) != as.integer(FIRE_DATE))
+```
+
+**(b)** Plot annual number of wildfires by year.
+
+```{r}
+fires_by_year <- wildfires %>% count(FIRE_YEAR)
+ggplot(fires_by_year, aes(x = FIRE_YEAR, y = n )) +
+  geom_line() +
+  geom_point(data = fires_by_year %>% filter(n == max(n)),
+             color = "blue",
+             size = 3) +
+  geom_text(data = fires_by_year %>% filter(n == max(n)),
+            aes(label = FIRE_YEAR),
+            vjust = -0.3,
+            color = "blue") +
+  geom_smooth(se = F) +
+  labs(title = "Annual Number of Wildfires", x = "Year", y = "Number of Fires") +
+  theme_minimal()
+```
+
+**(c)** Plot average fire size per year by year. 
+
+```{r}
+avg_size_by_year <- wildfires %>%
+  group_by(FIRE_YEAR) %>%
+  summarize(avg_fire_size = mean(FIRE_SIZE, na.rm = T))
+ggplot(avg_size_by_year, aes(x = FIRE_YEAR, y = avg_fire_size)) +
+  geom_line() +
+  geom_point(data = avg_size_by_year %>% filter(avg_fire_size == max(avg_fire_size)),
+             color = "blue",
+             size = 3) +
+  geom_text(data = avg_size_by_year %>% filter(avg_fire_size == max(avg_fire_size)),
+            aes(label = FIRE_YEAR),
+            vjust = -0.3,
+            color = "blue") +
+  geom_smooth(se = F) +
+  labs(title = "Average Fire Size by Year", x = "Year", y = "Average Fire Size (acres)") +
+  theme_minimal()
+```
+
+**(d)** Write 3–5 sentences describing temporal trends.
+
+The annual number of reported wildfires fluctuates substantially over time, with a major peak around 2006 and lower values in the early 1990s to 1997. There is no clear evidence that the number of fires increased annually, however, there may appear some unusually large fires in some years with a low number of fires. Average fire size per year is more variable, with occasional spikes indicating years with unusually large fires. These patterns suggest that wildfire activity varies over time rather than following a steady trend. Some extreme events might influence more. The smoothing curve in Annual number of wildfires suggests that a gradual increase in wildfires from early 1990s to the mid-2000s, then started to decline.
+
+---
+
+### Task 3 Exploring Spatial Patterns
+
+**(a)** Create a table of fire counts per `STATE` and report the top 10 states.
+
+```{r}
+fires_by_state <- wildfires %>% count(STATE, sort = T)
+top10_states <- fires_by_state %>% slice_head(n = 10)
+top10_states
+```
+
+**(b)** Make a horizontal bar plot of the top 10 states.
+
+```{r}
+ggplot(top10_states, aes(x = reorder(STATE, n), y = n)) +
+  geom_col() +
+  geom_text(aes(label = n), hjust = -0.2, size = 2) +
+  coord_flip() +
+  labs(title = "Top 10 States by Number of Wildfires", x = "State", y = "Number of Fires") +
+  theme_minimal()
+```
+
+**(c)** Make a scatterplot of ignition points (`LONGITUDE` vs `LATITUDE`).
+
+```{r}
+library(maps)
+uss <- map_data("state")
+ggplot()+
+  geom_polygon(data = uss, aes(x = long, y = lat, group = group), fill = NA, color = "black", linewidth = 0.2) +
+  geom_point(data = wildfires, aes(x = LONGITUDE, y = LATITUDE, color = STATE), alpha = 0.2, size = 0.5) +
+  coord_equal() +
+  labs(title = "Spatial Distribution of Wildfire Ignition Points", x = "Longitude", y = "Latitude") +
+  theme_minimal()
+```
+
+```{r}
+ggplot()+
+  geom_polygon(data = uss, aes(x = long, y = lat, group = group), fill = NA, color = "black", linewidth = 0.2) +
+  geom_point(data = wildfires, aes(x = LONGITUDE, y = LATITUDE, color = STATE), alpha = 0.2, size = 0.5) +
+  coord_quickmap(xlim = c(-125, -65), ylim = c(25,50)) +
+  labs(title = "Wildfires in the Contiguous US", x = "Longitude", y = "Latitude") +
+  theme_minimal()
+
+ggplot()+
+  geom_polygon(data = uss, aes(x = long, y = lat, group = group), fill = NA, color = "black", linewidth = 0.2) +
+  geom_point(data = wildfires, aes(x = LONGITUDE, y = LATITUDE, color = STATE), alpha = 0.2, size = 0.5) +
+  coord_quickmap(xlim = c(-125, -114), ylim = c(32,42)) +
+  labs(title = "Wildfires in the Northeastern US", x = "Longitude", y = "Latitude") +
+  theme_minimal()
+```
+
+**(d)** Comment briefly on geographic patterns. Optional: you may find it helpful to draw the boundaries of states. 
+
+Wildfires are concentrated in western states, such as California, Arizona, and Oregon which are major states in the top 10 states by number of wildfires. The central and southern regions also show significant activity, while the northeastern states display comparatively lower and more scattered points. Fires may reflect state-level differences in policies, reporting, cultures and responses.
+From the map, wildfires in California are primarily concentrated in the inland mountainous regions, particularly along the Sierra Nevada range and in Southern California. This is same as our common sense, Los Angeles has wildfires frequently. Also, we can see that California's wildfires are way higher than Nevada, this might because of the weather and geographic conditions.
+
+---
+
+### Task 4 Fire Size Distribution
+
+
+**(a)** Plot a histogram of `FIRE_SIZE` in log scale.
+
+```{r}
+#Remind: Adding additional variables!
+wildfires %>% ggplot(aes(x = FIRE_SIZE)) +
+  geom_histogram(bins = 50) +
+  labs(title = "Distribution of Fire Size (Acres)",
+       x = "Fire size (acres)", y = "Count") 
+```
+
+```{r}
+wildfires %>% ggplot(aes(x = FIRE_SIZE)) +
+  geom_histogram(bins = 50) +
+  scale_x_log10() +
+  labs(title = "Distribution of Fire Size (Acres)",
+       x = "Fire size in log-scaled (acres)", y = "Count")
+```
+
+**(b)** Create a boxplot of `FIRE_SIZE` by `FIRE_SIZE_CLASS`.
+
+```{r}
+#combine violin plot and box into together. 
+head(wildfires$FIRE_SIZE_CLASS)
+ggplot(wildfires, aes(x = FIRE_SIZE_CLASS, y = FIRE_SIZE)) +
+  geom_violin(fill = "blue", alpha = 0.6, trim = F) +
+  geom_boxplot() +
+  scale_y_log10() +
+  labs(title = "Fire Size by Fire Size Class",
+       x = "Fire size class", y = "Fire size (log10 scale)") +
+  theme_minimal()
+```
+
+**(c)** Compute the median, 90th percentile, and 99th percentile of `FIRE_SIZE`.
+
+```{r}
+size_summary <- wildfires %>%
+  summarise(
+    median_size = median(FIRE_SIZE, na.rm = TRUE),
+    p90_size    = quantile(FIRE_SIZE, 0.90, na.rm = TRUE),
+    p99_size    = quantile(FIRE_SIZE, 0.99, na.rm = TRUE)
+  )
+size_summary
+```
+
+**(d)** Write 3–4 sentences interpreting the distribution and what it suggests for prediction tasks.
+
+The distribution of fire size is highly skewed to the right with most fires being relatively small. The median fire size and majority of fire sizes are significantly small. The heavy tail of this distribution suggests the presence of extreme events that may affect our prediction model.The boxplot and violin plot illustrate increasing spread and variability across fire size classes, shows that larger fire size classes contain more extreme data. 
+
+---
+
+
+### Task 5 Visualizing Fire Size Patterns
+
+**(a)** Create a visualization that illustrates both the spatial and temporal patterns of fire sizes across U.S. states and years. Specifically, construct a heatmap with `STATE` on the y-axis, `FIRE_YEAR` on the x-axis, and the median `FIRE_SIZE` within each state–year combination represented by color intensity.
+```{r}
+tempdata<-wildfires %>%
+  group_by(STATE, FIRE_YEAR)
+head(tempdata)
+state_year_summary <- wildfires %>%
+  group_by(STATE, FIRE_YEAR) %>%
+  summarise(
+    median_size = median(FIRE_SIZE, na.rm = TRUE),
+    mean_size   = mean(FIRE_SIZE, na.rm = TRUE),
+    n_fires     = n(),
+    .groups = "drop"
+  )
+head(state_year_summary)
+state_year_summary %>% ggplot(aes(x = FIRE_YEAR, y = STATE, fill = median_size)) +
+  geom_tile(color = NA) + 
+  scale_fill_viridis_c(option = "magma", trans = "log10", direction = -1) +
+  labs(
+    title  = "Median Fire Size by State and Year (Subset)",
+    x      = "Year",
+    y      = "State",
+    fill   = "Median fire size\n(acres, log scale)"
+  )
+state_year_summary %>% ggplot(aes(x = FIRE_YEAR, y = STATE, fill = mean_size)) +
+  geom_tile(color = NA) + 
+  scale_fill_viridis_c(option = "magma", trans = "log10", direction = -1) +
+  labs(
+    title  = "Mean Fire Size by State and Year (Subset)",
+    x      = "Year",
+    y      = "State",
+    fill   = "Median fire size\n(acres, log scale)"
+  )
+```
+
+**(b)** Briefly interpret the visualization. Your interpretation should describe any noticeable spatial differences across states, temporal trends over years, or other meaningful patterns observed in the plot.
+
+The heatmap reveals clear spatial and temporal variations in average wildfire size across US states and years. Spatially, western states tend to exhibit darker colors which means larger mean and median fire sizes compared to many eastern states. The stronger concentration of large fires in western states may be associated with drier climates and forested area. Temporally, more states have wildfires records, and some states have large wildfire in certain years, but these fires are not consecutive. 
+The mean and median heatmaps have significant difference in colors. This might be caused by extreme large wildfires, for example, State AK has no darker color in median heatmap, but it has many darker color in mean, therefore, we may guess that AK has extremely large wildfires to influence it's mean. 
+
+---
+### Task 6  Designing Your Own Visualization
+
+**(a)** Create an additional visualization of your own choosing that also highlights spatial and temporal information in fire sizes across states and years.  
+
+```{r,warning=FALSE}
+# 4 warnings, I set warning = F
+library(plotly)
+t10_s <- top10_states %>% pull(STATE)
+t10_s_year <- state_year_summary %>%
+  filter(STATE %in% t10_s)
+t_p <- t10_s_year %>%
+  plot_ly(x = ~FIRE_YEAR,
+          y = ~.data[["mean_size"]],
+          color = ~STATE,
+          text = ~STATE,
+          type = "scatter",
+          mode = "lines",
+          hovertemplate = paste("State: %{text}<br>","Year: %{x}<br>","Mean Fire Size",":%{y::2f}<extra></extra>"))%>%
+  layout(title = paste("Mean Fire Size over years in top10 number of wildfires states"),
+         xaxis = list(title = "Year"),
+         yaxis = list(title = "Mean Fire Size", type = "log", tickmode = "array",tickvals = c(1,10,100,1000),ticktext = c("1","10","100","1000"), showgrid = T))
+t_p
+```
+
+
+**(b)** Provide a short explanation of (1) why you chose this visualization, and (2) what new or complementary insights it reveals compared to plots from the other tasks.
+
+In the previous tasks, we just summarized the top10 states, we didn't visualize it. Therefore, I decided to visualize these top10 states in average fire size. 
+I would like to say this graph shows that AZ has a largest mean fire size in 2003, however, in previous heatmap, we can say AZ is not such dark. Also for NY, even NY has relatively frequent wildfires, but the mean fire size is also relatively small. This provides a new idea that higher number of fires don't mean that higher mean fire size. Unlike previous top10 graph, we can only see how many fires in these states, this graph can see years and mean fire size. This interactive plot can help us read data easily and quickly.

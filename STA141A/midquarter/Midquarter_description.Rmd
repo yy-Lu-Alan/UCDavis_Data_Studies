@@ -1,6 +1,6 @@
 ---
 title: "STA 141A: Midquarter report"
-author: ""
+author: "Lu"
 output: html_document
 ---
 

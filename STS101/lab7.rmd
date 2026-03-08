@@ -1,6 +1,6 @@
 ---
 title: "STS 101: Lab 7"
-author: "Yaoyun Lu"
+author: ""
 date: "November 19, 2025"
 output: html_document
 ---

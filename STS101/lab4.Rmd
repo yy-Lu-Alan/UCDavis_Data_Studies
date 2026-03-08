@@ -1,6 +1,6 @@
 ---
 title: "STS 101: Lab 4"
-author: "Yaoyun Lu"
+author: ""
 date: "October 26, 2025"
 output: pdf_document
 ---

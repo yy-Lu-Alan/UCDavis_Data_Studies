@@ -1,6 +1,6 @@
 ---
 title: "STA 141A: Midquarter report"
-author: "Yaoyun Lu"
+author: ""
 output: html_document
 ---
 
